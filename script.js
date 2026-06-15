@@ -456,3 +456,456 @@ function updateStatus(status, target, delivered, total, traveled) {
   document.getElementById('progressBar').style.width =
     (total > 0 ? (delivered / total) * 100 : 0) + '%';
 }
+// ─────────────────────────────────────────────
+// DRAWING
+// ─────────────────────────────────────────────
+function drawAll() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  drawBackground();
+  drawRoads();
+  if (state.routeDisplayMode === 'greedy' || state.routeDisplayMode === 'both')
+    drawRoadPath(state.greedyWaypoints, COLOR.routeGreedy, 3, [10, 6]);
+  if (state.routeDisplayMode === 'brute'  || state.routeDisplayMode === 'both')
+    drawRoadPath(state.bruteWaypoints,  COLOR.routeBrute,  2.5, [6, 8]);
+  drawNodes();
+  if (state.courier.running || state.greedyRan || state.bruteRan) drawCourier();
+}
+
+function drawBackground() {
+  ctx.fillStyle = '#131f30';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  // Dot grid across full canvas
+  ctx.fillStyle = 'rgba(255,255,255,0.025)';
+  for (let x = 0; x < canvas.width;  x += 30)
+    for (let y = 0; y < canvas.height; y += 30) {
+      ctx.beginPath(); ctx.arc(x, y, 1, 0, Math.PI * 2); ctx.fill();
+    }
+}
+
+function drawRoads() {
+  const { ox, oy, cellW, cellH } = gridGeom();
+  const roadHalfW = 14;   // half-width of the road band
+
+  // ── Vertical road bands — extend from y=0 to canvas bottom so no clip ──
+  for (let c = 0; c <= GRID_COLS; c++) {
+    const x = ox + c * cellW;
+    ctx.fillStyle = COLOR.road;
+    ctx.fillRect(x - roadHalfW, 0, roadHalfW * 2, canvas.height);
+
+    // Centre dashed line (only inside padded area)
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255,255,255,0.07)';
+    ctx.lineWidth   = 1;
+    ctx.setLineDash([12, 18]);
+    ctx.beginPath();
+    ctx.moveTo(x, oy);
+    ctx.lineTo(x, oy + cellH * GRID_ROWS);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+  }
+
+  // ── Horizontal road bands — extend from x=0 to canvas right so no clip ──
+  for (let r = 0; r <= GRID_ROWS; r++) {
+    const y = oy + r * cellH;
+    ctx.fillStyle = COLOR.road;
+    ctx.fillRect(0, y - roadHalfW, canvas.width, roadHalfW * 2);
+
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255,255,255,0.07)';
+    ctx.lineWidth   = 1;
+    ctx.setLineDash([12, 18]);
+    ctx.beginPath();
+    ctx.moveTo(ox, y);
+    ctx.lineTo(ox + cellW * GRID_COLS, y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+  }
+
+  // ── Intersection squares ──
+  for (let c = 0; c <= GRID_COLS; c++) {
+    for (let r = 0; r <= GRID_ROWS; r++) {
+      const x = ox + c * cellW;
+      const y = oy + r * cellH;
+      ctx.fillStyle = '#243b55';
+      ctx.fillRect(x - roadHalfW, y - roadHalfW, roadHalfW * 2, roadHalfW * 2);
+    }
+  }
+}
+
+// Draw a route as a series of waypoints following the road grid
+function drawRoadPath(waypoints, color, lineW, dashPattern) {
+  if (!waypoints || waypoints.length < 2) return;
+  const { ox, oy, cellW, cellH } = gridGeom();
+  const roadHalfW = 14;
+  // Clipping rect = road grid bounds with a little extra for the road half-width
+  const clipX = ox - roadHalfW;
+  const clipY = oy - roadHalfW;
+  const clipW = cellW * GRID_COLS + roadHalfW * 2;
+  const clipH = cellH * GRID_ROWS + roadHalfW * 2;
+
+  ctx.save();
+  // Clip so route lines never escape the road area
+  ctx.beginPath();
+  ctx.rect(clipX, clipY, clipW, clipH);
+  ctx.clip();
+
+  // Glow pass (wide, soft)
+  ctx.strokeStyle = color;
+  ctx.lineWidth   = lineW + 5;
+  ctx.setLineDash(dashPattern);
+  ctx.globalAlpha = 0.20;
+  ctx.lineJoin    = 'round';
+  ctx.lineCap     = 'round';
+  ctx.beginPath();
+  ctx.moveTo(waypoints[0].x, waypoints[0].y);
+  for (let i = 1; i < waypoints.length; i++) ctx.lineTo(waypoints[i].x, waypoints[i].y);
+  ctx.stroke();
+
+  // Main line
+  ctx.globalAlpha = 0.88;
+  ctx.lineWidth   = lineW;
+  ctx.beginPath();
+  ctx.moveTo(waypoints[0].x, waypoints[0].y);
+  for (let i = 1; i < waypoints.length; i++) ctx.lineTo(waypoints[i].x, waypoints[i].y);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Direction arrows
+  ctx.globalAlpha = 0.78;
+  for (let i = 0; i < waypoints.length - 1; i++) {
+    const a = waypoints[i], b = waypoints[i + 1];
+    if (Math.hypot(b.x - a.x, b.y - a.y) >= 28) drawArrow(a, b, color, lineW);
+  }
+
+  ctx.restore();
+}
+
+function drawArrow(from, to, color, lineW) {
+  const dx = to.x - from.x, dy = to.y - from.y;
+  const angle = Math.atan2(dy, dx);
+  const mx = (from.x + to.x) / 2, my = (from.y + to.y) / 2;
+  const al = 7, aa = 0.42;
+  ctx.strokeStyle = color;
+  ctx.lineWidth   = lineW * 0.85;
+  ctx.beginPath();
+  ctx.moveTo(mx - Math.cos(angle - aa) * al, my - Math.sin(angle - aa) * al);
+  ctx.lineTo(mx, my);
+  ctx.lineTo(mx - Math.cos(angle + aa) * al, my - Math.sin(angle + aa) * al);
+  ctx.stroke();
+}
+
+function drawNodes() {
+  state.nodes.forEach(node => {
+    if (node.type === 'warehouse') drawWarehouse(node);
+    else drawHouse(node);
+  });
+}
+
+function drawWarehouse(node) {
+  const r = 22;
+  // Glow aura
+  const glow = ctx.createRadialGradient(node.x, node.y, 0, node.x, node.y, r * 2.2);
+  glow.addColorStop(0, 'rgba(245,158,11,0.40)');
+  glow.addColorStop(1, 'rgba(245,158,11,0)');
+  ctx.fillStyle = glow;
+  ctx.beginPath(); ctx.arc(node.x, node.y, r * 2.2, 0, Math.PI * 2); ctx.fill();
+  // Body
+  ctx.beginPath(); ctx.arc(node.x, node.y, r, 0, Math.PI * 2);
+  ctx.fillStyle = '#f59e0b'; ctx.fill();
+  ctx.strokeStyle = '#fbbf24'; ctx.lineWidth = 2.5; ctx.stroke();
+  // Icon + label
+  ctx.font = '18px serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('\uD83C\uDFED', node.x, node.y);
+  ctx.font = 'bold 11px DM Sans'; ctx.fillStyle = 'white';
+  ctx.fillText('GUDANG', node.x, node.y + r + 14);
+  drawRoadConnector(node);
+}
+
+function drawHouse(node) {
+  const isV = node.visited;
+  const color = isV ? COLOR.houseVisited : COLOR.house;
+  const r = 18;
+  ctx.shadowColor = color; ctx.shadowBlur = isV ? 14 : 7;
+  ctx.beginPath();
+  for (let i = 0; i < 6; i++) {
+    const a = (Math.PI / 3) * i - Math.PI / 6;
+    if (i === 0) ctx.moveTo(node.x + r * Math.cos(a), node.y + r * Math.sin(a));
+    else         ctx.lineTo(node.x + r * Math.cos(a), node.y + r * Math.sin(a));
+  }
+  ctx.closePath();
+  ctx.fillStyle   = color; ctx.fill();
+  ctx.strokeStyle = isV ? '#34d399' : '#93c5fd'; ctx.lineWidth = 2; ctx.stroke();
+  ctx.shadowBlur  = 0;
+  ctx.font = '14px serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(isV ? '\u2705' : '\uD83C\uDFE0', node.x, node.y);
+  ctx.font = 'bold 10px DM Sans'; ctx.fillStyle = 'white';
+  ctx.fillText(node.name.replace('Rumah ', 'H'), node.x, node.y + r + 12);
+  drawRoadConnector(node);
+}
+
+// Thin dashed line: building icon ↔ road snap point
+function drawRoadConnector(node) {
+  const d = Math.hypot(node.roadX - node.x, node.roadY - node.y);
+  if (d < 3) return;
+  ctx.save();
+  ctx.strokeStyle = 'rgba(255,255,255,0.20)';
+  ctx.lineWidth   = 1.2;
+  ctx.setLineDash([3, 5]);
+  ctx.beginPath();
+  ctx.moveTo(node.x, node.y); ctx.lineTo(node.roadX, node.roadY);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  // Small dot at road snap
+  ctx.fillStyle = 'rgba(255,255,255,0.35)';
+  ctx.beginPath(); ctx.arc(node.roadX, node.roadY, 3, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+}
+
+function drawCourier() {
+  const cx = state.courier.x, cy = state.courier.y;
+  if (cx === 0 && cy === 0) return;
+  const glow = ctx.createRadialGradient(cx, cy, 0, cx, cy, 30);
+  glow.addColorStop(0, 'rgba(239,68,68,0.50)');
+  glow.addColorStop(1, 'rgba(239,68,68,0)');
+  ctx.fillStyle = glow;
+  ctx.beginPath(); ctx.arc(cx, cy, 30, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(cx, cy, 14, 0, Math.PI * 2);
+  ctx.fillStyle = '#ef4444'; ctx.fill();
+  ctx.strokeStyle = '#fca5a5'; ctx.lineWidth = 2.5; ctx.stroke();
+  ctx.font = '14px serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('\uD83D\uDE9A', cx, cy);
+}
+
+// ─────────────────────────────────────────────
+// ANIMATION — courier moves along road waypoints px-by-px
+// ─────────────────────────────────────────────
+function animateAlongPath() {
+  if (!state.courier.running) return;
+
+  const wps     = state.courier.waypoints;
+  const speedPx = SPEED_PX[state.speed] || SPEED_PX[1];
+  const idx     = state.courier.wpIdx;
+
+  if (idx >= wps.length - 1) {
+    // Trip done
+    state.courier.running = false;
+    const mode = state.courier.mode;
+    if (mode === 'greedy') state.greedyRan = true;
+    else                   state.bruteRan  = true;
+    renderComparison();
+    const total = state.courier.nodeStops.length - 2;
+    updateStatus('SELESAI', 'Gudang', total, total, state.courier.totalDist);
+    drawAll();
+    showToast('\u2705 ' + (mode === 'greedy' ? 'Greedy' : 'Brute Force') +
+              ' selesai! Semua paket terkirim.');
+    document.getElementById('btnStart').disabled      = false;
+    document.getElementById('btnStartBrute').disabled = false;
+    return;
+  }
+
+  const from   = wps[idx], to = wps[idx + 1];
+  const dx     = to.x - from.x, dy = to.y - from.y;
+  const segLen = Math.hypot(dx, dy);
+
+  if (segLen < 0.5) {
+    state.courier.wpIdx++;
+    state.animFrame = requestAnimationFrame(animateAlongPath);
+    return;
+  }
+
+  const t     = state.courier.segT;
+  const nextT = t + speedPx / segLen;
+
+  if (nextT >= 1) {
+    state.courier.totalDist += segLen * (1 - t);
+    state.courier.x  = to.x; state.courier.y = to.y;
+    state.courier.wpIdx++; state.courier.segT = 0;
+
+    // Check if arrived at a stop node
+    const ns = state.courier.nextStop;
+    if (ns < state.courier.stopWpIdx.length &&
+        state.courier.wpIdx >= state.courier.stopWpIdx[ns]) {
+      state.nodes[state.courier.nodeStops[ns + 1]].visited = true;
+      state.courier.delivered++;
+      state.courier.nextStop++;
+      const total    = state.courier.nodeStops.length - 2;
+      const nextIdx  = state.courier.nodeStops[
+        Math.min(state.courier.nextStop + 1, state.courier.nodeStops.length - 1)];
+      updateStatus('BERJALAN',
+        state.nodes[nextIdx] ? state.nodes[nextIdx].name : 'Gudang',
+        state.courier.delivered, total, state.courier.totalDist);
+    }
+  } else {
+    state.courier.totalDist += speedPx;
+    state.courier.segT  = nextT;
+    state.courier.x     = from.x + dx * nextT;
+    state.courier.y     = from.y + dy * nextT;
+  }
+
+  drawAll();
+  state.animFrame = requestAnimationFrame(animateAlongPath);
+}
+
+// ─────────────────────────────────────────────
+// START GREEDY
+// ─────────────────────────────────────────────
+function startGreedy() {
+  if (state.courier.running) return;
+  state.nodes.forEach(n => n.visited = false);
+  state.nodes[0].visited = true;
+  const { waypoints, stopWpIdx } = buildTripWaypoints(state.greedyRoute);
+  state.greedyWaypoints = waypoints;
+  state.courier = { x: waypoints[0].x, y: waypoints[0].y,
+    waypoints, stopWpIdx, nodeStops: state.greedyRoute,
+    wpIdx: 0, segT: 0, running: true,
+    delivered: 0, totalDist: 0, mode: 'greedy', nextStop: 0 };
+  state.greedyRan = true;
+  document.getElementById('btnStart').disabled      = true;
+  document.getElementById('btnStartBrute').disabled = true;
+  setRouteMode('greedy');
+  updateStatus('BERJALAN', state.nodes[state.greedyRoute[1]].name,
+               0, state.nodes.length - 2, 0);
+  animateAlongPath();
+}
+
+// ─────────────────────────────────────────────
+// START BRUTE FORCE
+// ─────────────────────────────────────────────
+function startBruteForce() {
+  if (state.courier.running) return;
+  const result = bruteForce();
+  state.bruteRoute = result.route;
+  state.bruteDist  = result.dist;
+  state.bruteRan   = true;
+  renderBruteRoute();
+  renderComparison();
+  state.nodes.forEach(n => n.visited = false);
+  state.nodes[0].visited = true;
+  const { waypoints, stopWpIdx } = buildTripWaypoints(state.bruteRoute);
+  state.bruteWaypoints = waypoints;
+  state.courier = { x: waypoints[0].x, y: waypoints[0].y,
+    waypoints, stopWpIdx, nodeStops: state.bruteRoute,
+    wpIdx: 0, segT: 0, running: true,
+    delivered: 0, totalDist: 0, mode: 'brute', nextStop: 0 };
+  document.getElementById('btnStart').disabled      = true;
+  document.getElementById('btnStartBrute').disabled = true;
+  setRouteMode('both');
+  updateStatus('BERJALAN', state.nodes[state.bruteRoute[1]].name,
+               0, state.nodes.length - 2, 0);
+  animateAlongPath();
+}
+
+// ─────────────────────────────────────────────
+// ROUTE DISPLAY MODE
+// ─────────────────────────────────────────────
+function setRouteMode(mode) {
+  state.routeDisplayMode = mode;
+  document.querySelectorAll('.rmt-btn').forEach(b =>
+    b.classList.toggle('active', b.dataset.mode === mode));
+  drawAll();
+}
+
+// ─────────────────────────────────────────────
+// TOAST
+// ─────────────────────────────────────────────
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 3000);
+}
+
+// ─────────────────────────────────────────────
+// INIT
+// ─────────────────────────────────────────────
+function init() {
+  if (state.animFrame) cancelAnimationFrame(state.animFrame);
+  generateNodes();
+
+  state.greedyRoute = greedyNearestNeighbor();
+  state.greedyDist  = routeRoadDistance(state.greedyRoute);
+  const gTrip = buildTripWaypoints(state.greedyRoute);
+  state.greedyWaypoints = gTrip.waypoints;
+
+  state.bruteRoute     = [];
+  state.bruteDist      = 0;
+  state.bruteWaypoints = [];
+  state.greedyRan      = false;
+  state.bruteRan       = false;
+  state.routeDisplayMode = 'greedy';
+
+  state.courier = {
+    x: state.nodes[0].x, y: state.nodes[0].y,
+    waypoints: [], stopWpIdx: [], nodeStops: [],
+    wpIdx: 0, segT: 0, running: false,
+    delivered: 0, totalDist: 0, mode: 'greedy', nextStop: 0,
+  };
+
+  renderGreedyRoute();
+  renderBruteRoute();
+
+  const bfStatus = document.getElementById('bfStatus');
+  bfStatus.textContent = 'Belum dijalankan';
+  bfStatus.className   = 'bf-status';
+  document.getElementById('bfPerms').textContent           = '';
+  document.getElementById('compareSection').style.display = 'none';
+
+  document.querySelectorAll('.rmt-btn').forEach(b =>
+    b.classList.toggle('active', b.dataset.mode === 'greedy'));
+
+  updateStatus('IDLE', '\u2014', 0, state.nodes.length - 2, 0);
+  document.getElementById('btnStart').disabled      = false;
+  document.getElementById('btnStartBrute').disabled = false;
+  drawAll();
+}
+
+// ─────────────────────────────────────────────
+// SIDEBAR TOGGLE
+// ─────────────────────────────────────────────
+(function setupSidebarToggle() {
+  const btn     = document.getElementById('sidebarToggle');
+  const sidebar = document.querySelector('.sidebar');
+  if (!btn || !sidebar) return;
+  let collapsed = false;
+  btn.addEventListener('click', () => {
+    collapsed = !collapsed;
+    sidebar.classList.toggle('collapsed', collapsed);
+    btn.textContent = collapsed ? '\u25B6' : '\u2630';
+    setTimeout(() => {
+      resizeCanvas(); buildRoadGraph();
+      if (state.greedyRoute.length > 1)
+        state.greedyWaypoints = buildTripWaypoints(state.greedyRoute).waypoints;
+      if (state.bruteRoute && state.bruteRoute.length > 1)
+        state.bruteWaypoints = buildTripWaypoints(state.bruteRoute).waypoints;
+      drawAll();
+    }, 270);
+  });
+})();
+
+// ─────────────────────────────────────────────
+// EVENTS
+// ─────────────────────────────────────────────
+document.getElementById('btnStart').addEventListener('click', startGreedy);
+document.getElementById('btnStartBrute').addEventListener('click', startBruteForce);
+document.getElementById('btnReset').addEventListener('click', () => {
+  if (state.animFrame) cancelAnimationFrame(state.animFrame);
+  state.courier.running = false;
+  init();
+  showToast('\uD83D\uDD04 Peta diacak ulang! ' + factorial(MAX_HOUSES) + ' permutasi siap dihitung.');
+});
+document.querySelectorAll('.speed-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.speed-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    state.speed = parseInt(btn.dataset.speed);
+  });
+});
+document.querySelectorAll('.rmt-btn').forEach(btn => {
+  btn.addEventListener('click', () => setRouteMode(btn.dataset.mode));
+});
+
+// ─────────────────────────────────────────────
+// BOOT
+// ─────────────────────────────────────────────
+window.addEventListener('load', init);
