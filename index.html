@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Smart Courier Simulator — VRP Greedy vs Brute Force</title>
+  <link rel="stylesheet" href="style.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet" />
+</head>
+<body>
+
+  <!-- TOP BAR -->
+  <header class="topbar">
+    <div class="topbar-left">
+      <div class="logo-icon">📦</div>
+      <div class="topbar-title">
+        <span class="title-main">SMART COURIER</span>
+        <span class="title-sub">SIMULATOR v1.0</span>
+      </div>
+    </div>
+    <div class="topbar-right">
+      <div class="badge">VRP</div>
+      <div class="badge accent">GREEDY O(n²)</div>
+      <div class="badge brute">BRUTE FORCE O(n!)</div>
+      <div class="course-tag">Perancangan &amp; Analisis Algoritma</div>
+    </div>
+    <button class="sidebar-toggle" id="sidebarToggle" title="Toggle Sidebar">☰</button>
+  </header>
+
+  <!-- MAIN LAYOUT -->
+  <div class="main-layout">
+
+    <!-- SIDEBAR -->
+    <aside class="sidebar">
+
+      <!-- Algorithm Info -->
+      <section class="card card-algo">
+        <div class="card-header">
+          <span class="card-icon">⚡</span>
+          <span class="card-title">ANALISIS ALGORITMA</span>
+        </div>
+        <div class="algo-row">
+          <div class="algo-pill greedy-pill">
+            <div class="algo-pill-name">Greedy NN</div>
+            <div class="algo-pill-cmplx">O(n²)</div>
+          </div>
+          <div class="algo-vs-divider">VS</div>
+          <div class="algo-pill brute-pill">
+            <div class="algo-pill-name">Brute Force</div>
+            <div class="algo-pill-cmplx">O(n!)</div>
+          </div>
+        </div>
+        <div class="algo-compare-table">
+          <div class="algo-compare-row">
+            <span class="acr-label">Kecepatan</span>
+            <span class="acr-g">✅ Cepat</span>
+            <span class="acr-b">❌ Lambat</span>
+          </div>
+          <div class="algo-compare-row">
+            <span class="acr-label">Optimalitas</span>
+            <span class="acr-g">⚠️ Lokal</span>
+            <span class="acr-b">✅ Global</span>
+          </div>
+          <div class="algo-compare-row">
+            <span class="acr-label">Skalabilitas</span>
+            <span class="acr-g">✅ Tinggi</span>
+            <span class="acr-b">❌ Rendah</span>
+          </div>
+        </div>
+        <div class="algo-desc">
+          Greedy memilih tetangga terdekat secara lokal — cepat namun tidak selalu optimal. Brute Force mencoba semua permutasi, menjamin solusi terbaik namun sangat lambat untuk n besar.
+        </div>
+      </section>
+
+      <!-- Controls -->
+      <section class="card card-controls">
+        <div class="card-header">
+          <span class="card-icon">🎮</span>
+          <span class="card-title">KONTROL</span>
+        </div>
+        <div class="speed-control">
+          <label class="control-label">Kecepatan Kurir</label>
+          <div class="speed-btns">
+            <button class="speed-btn active" data-speed="1">1x</button>
+            <button class="speed-btn" data-speed="2">2x</button>
+            <button class="speed-btn" data-speed="3">3x</button>
+          </div>
+        </div>
+        <div class="btn-group">
+          <button class="btn btn-primary" id="btnStart">▶ Jalankan Greedy</button>
+          <button class="btn btn-brute" id="btnStartBrute">🔬 Jalankan Brute Force</button>
+          <button class="btn btn-secondary" id="btnReset">↺ Reset &amp; Acak Ulang</button>
+        </div>
+        <div class="route-mode-toggle">
+          <span class="rmt-label">Tampilkan Route:</span>
+          <div class="rmt-btns">
+            <button class="rmt-btn active" data-mode="greedy">Greedy</button>
+            <button class="rmt-btn" data-mode="brute">Brute Force</button>
+            <button class="rmt-btn" data-mode="both">Keduanya</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Auto Route (Greedy) -->
+      <section class="card card-route">
+        <div class="card-header">
+          <span class="card-icon">🤖</span>
+          <span class="card-title">AUTO ROUTE (GREEDY)</span>
+        </div>
+        <div class="route-list" id="greedyRouteList">
+          <div class="route-placeholder">Belum dijalankan</div>
+        </div>
+        <div class="route-distance">
+          <span class="dist-label">Total Jarak</span>
+          <span class="dist-value" id="greedyDistance">—</span>
+        </div>
+      </section>
+
+      <!-- Brute Force Route -->
+      <section class="card card-brute">
+        <div class="card-header">
+          <span class="card-icon">🔬</span>
+          <span class="card-title">BRUTE FORCE ROUTE</span>
+        </div>
+        <div class="bf-status-wrap">
+          <div class="bf-status" id="bfStatus">Belum dijalankan</div>
+          <div class="bf-perms" id="bfPerms"></div>
+        </div>
+        <div class="route-list" id="bruteRouteList">
+          <div class="route-placeholder">Jalankan Brute Force untuk melihat route optimal</div>
+        </div>
+        <div class="route-distance">
+          <span class="dist-label">Total Jarak Optimal</span>
+          <span class="dist-value brute-dist" id="bruteDistance">—</span>
+        </div>
+      </section>
+
+      <!-- Comparison -->
+      <section class="card card-compare" id="compareSection" style="display:none">
+        <div class="card-header">
+          <span class="card-icon">📊</span>
+          <span class="card-title">PERBANDINGAN ALGORITMA</span>
+        </div>
+        <div class="compare-grid">
+          <div class="compare-item">
+            <div class="compare-label">🤖 Greedy</div>
+            <div class="compare-val" id="cmpGreedy">—</div>
+            <div class="compare-sublabel">O(n²)</div>
+          </div>
+          <div class="compare-vs">VS</div>
+          <div class="compare-item brute-compare-item">
+            <div class="compare-label">🔬 Brute Force</div>
+            <div class="compare-val" id="cmpManual">—</div>
+            <div class="compare-sublabel">O(n!)</div>
+          </div>
+        </div>
+        <div class="compare-selisih" id="compareSelisih"></div>
+        <div class="compare-verdict" id="compareVerdict"></div>
+      </section>
+
+      <!-- Courier Status -->
+      <section class="card card-status">
+        <div class="card-header">
+          <span class="card-icon">🚚</span>
+          <span class="card-title">STATUS KURIR</span>
+        </div>
+        <div class="status-row">
+          <span class="status-label">Status</span>
+          <span class="status-badge" id="courierStatus">IDLE</span>
+        </div>
+        <div class="status-row">
+          <span class="status-label">Menuju</span>
+          <span class="status-info" id="courierTarget">—</span>
+        </div>
+        <div class="status-row">
+          <span class="status-label">Terkirim</span>
+          <span class="status-info" id="courierDelivered">0 / 0</span>
+        </div>
+        <div class="status-row">
+          <span class="status-label">Jarak Tempuh</span>
+          <span class="status-info" id="courierTraveled">0</span>
+        </div>
+        <div class="progress-bar-wrap">
+          <div class="progress-bar" id="progressBar" style="width:0%"></div>
+        </div>
+      </section>
+
+    </aside>
+
+    <!-- MAP AREA -->
+    <main class="map-area">
+      <canvas id="mapCanvas"></canvas>
+      <div class="map-legend">
+        <div class="legend-item"><span class="legend-dot warehouse"></span>Gudang</div>
+        <div class="legend-item"><span class="legend-dot house"></span>Rumah</div>
+        <div class="legend-item"><span class="legend-dot route-greedy"></span>Rute Greedy</div>
+        <div class="legend-item"><span class="legend-dot route-brute"></span>Rute Brute Force</div>
+        <div class="legend-item"><span class="legend-dot courier-dot"></span>Kurir</div>
+      </div>
+    </main>
+
+  </div>
+
+  <!-- Toast -->
+  <div class="toast" id="toast"></div>
+
+  <script src="script.js"></script>
+</body>
+</html>
