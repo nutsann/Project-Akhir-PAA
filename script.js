@@ -337,3 +337,122 @@ function greedyNearestNeighbor() {
   route.push(0);
   return route;
 }
+
+// ─────────────────────────────────────────────
+// ALGORITHM 2 — Brute Force O(n!)
+// ─────────────────────────────────────────────
+function permutations(arr) {
+  if (arr.length <= 1) return [arr.slice()];
+  const result = [];
+  for (let i = 0; i < arr.length; i++) {
+    const rest = arr.slice(0, i).concat(arr.slice(i + 1));
+    for (const p of permutations(rest)) result.push([arr[i], ...p]);
+  }
+  return result;
+}
+
+function factorial(n) { return n <= 1 ? 1 : n * factorial(n - 1); }
+
+function bruteForce() {
+  const houseIdx = state.nodes.slice(1).map((_, i) => i + 1);
+  const totalP   = factorial(houseIdx.length);
+
+  document.getElementById('bfPerms').textContent = totalP + ' perm';
+  const bfStatus = document.getElementById('bfStatus');
+  bfStatus.textContent = 'Menghitung ' + totalP + ' rute...';
+  bfStatus.className   = 'bf-status computing';
+
+  let bestRoute = null, bestD = Infinity;
+  for (const perm of permutations(houseIdx)) {
+    const route = [0, ...perm, 0];
+    const d     = routeRoadDistance(route);
+    if (d < bestD) { bestD = d; bestRoute = route; }
+  }
+
+  bfStatus.textContent = '\u2713 Selesai! ' + totalP + ' rute diperiksa';
+  bfStatus.className   = 'bf-status done';
+  return { route: bestRoute, dist: bestD };
+}
+
+// ─────────────────────────────────────────────
+// SIDEBAR RENDERING
+// ─────────────────────────────────────────────
+function makeStepEl(num, name, d, colorClass) {
+  const step   = document.createElement('div');
+  step.className = 'route-step';
+  const numEl  = document.createElement('span');
+  numEl.className = 'step-num' + (colorClass ? ' ' + colorClass : '');
+  numEl.textContent = num;
+  const nameEl = document.createElement('span');
+  nameEl.className = 'step-name';
+  nameEl.textContent = name;
+  const dEl    = document.createElement('span');
+  dEl.className = 'step-dist';
+  dEl.textContent = Math.round(d) + 'px';
+  step.appendChild(numEl); step.appendChild(nameEl); step.appendChild(dEl);
+  return step;
+}
+
+function renderGreedyRoute() {
+  const list   = document.getElementById('greedyRouteList');
+  const distEl = document.getElementById('greedyDistance');
+  list.innerHTML = '';
+  for (let i = 0; i < state.greedyRoute.length - 1; i++) {
+    const from = state.nodes[state.greedyRoute[i]];
+    const to   = state.nodes[state.greedyRoute[i + 1]];
+    list.appendChild(makeStepEl(i + 1, to.name, roadSegmentDist(from, to), ''));
+  }
+  distEl.textContent = Math.round(state.greedyDist) + ' px';
+}
+
+function renderBruteRoute() {
+  const list   = document.getElementById('bruteRouteList');
+  const distEl = document.getElementById('bruteDistance');
+  list.innerHTML = '';
+  if (!state.bruteRoute || state.bruteRoute.length < 2) {
+    list.innerHTML = '<div class="route-placeholder">Jalankan Brute Force untuk melihat route optimal</div>';
+    distEl.textContent = '\u2014';
+    return;
+  }
+  for (let i = 0; i < state.bruteRoute.length - 1; i++) {
+    const from = state.nodes[state.bruteRoute[i]];
+    const to   = state.nodes[state.bruteRoute[i + 1]];
+    list.appendChild(makeStepEl(i + 1, to.name, roadSegmentDist(from, to), 'brute'));
+  }
+  distEl.textContent = Math.round(state.bruteDist) + ' px';
+}
+
+function renderComparison() {
+  const section = document.getElementById('compareSection');
+  if (!state.greedyRan || !state.bruteRan) { section.style.display = 'none'; return; }
+  section.style.display = 'block';
+  const gd = Math.round(state.greedyDist), bd = Math.round(state.bruteDist);
+  document.getElementById('cmpGreedy').textContent = gd + ' px';
+  document.getElementById('cmpManual').textContent = bd + ' px';
+  const diff = Math.abs(gd - bd);
+  document.getElementById('compareSelisih').textContent = 'Selisih: ' + diff + ' px';
+  const verdict = document.getElementById('compareVerdict');
+  if (diff === 0) {
+    verdict.className   = 'compare-verdict tie';
+    verdict.textContent = '\uD83E\uDD1D Greedy menemukan solusi optimal! Identik dengan Brute Force.';
+  } else if (gd <= bd) {
+    verdict.className   = 'compare-verdict greedy-wins';
+    verdict.textContent = '\u2705 Greedy optimal di kasus ini! Hemat ' + diff + ' px.';
+  } else {
+    verdict.className   = 'compare-verdict manual-wins';
+    verdict.textContent = '\uD83D\uDD2C Brute Force lebih optimal! Hemat ' + diff +
+                          'px (' + ((diff/gd)*100).toFixed(1) + '%).';
+  }
+}
+
+function updateStatus(status, target, delivered, total, traveled) {
+  const badge = document.getElementById('courierStatus');
+  badge.textContent = status; badge.className = 'status-badge';
+  if (status === 'BERJALAN') badge.classList.add('running');
+  if (status === 'SELESAI')  badge.classList.add('done');
+  document.getElementById('courierTarget').textContent    = target || '\u2014';
+  document.getElementById('courierDelivered').textContent = delivered + ' / ' + total;
+  document.getElementById('courierTraveled').textContent  = Math.round(traveled) + ' px';
+  document.getElementById('progressBar').style.width =
+    (total > 0 ? (delivered / total) * 100 : 0) + '%';
+}
